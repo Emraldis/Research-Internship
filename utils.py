@@ -5,17 +5,22 @@ import math
 import random
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.metrics import roc_auc_score
 
 DEBUG = {
     "fileParser":False,
     "parseData":False,
     "dataSet": False,
     "dataSetSplit": False,
-    "getSplitData": False
+    "getSplitData": False,
+    "avg_type_check": False,
+    "avg_array_set_type": False,
+    "std_dev_type_check": False,
+    "std_dev_array_set_type": False,
 }
 
-labelDivision = "dependent/independent/control"
-#labelDivision = "healthy/unhealthy"
+#labelDivision = "dependent/independent/control"
+labelDivision = "healthy/unhealthy"
 
 class dataEntry:
     def __init__(self, ID, diagnosis, data, label_division = "dependent/independent/control"):
@@ -60,8 +65,16 @@ class dataSet:
         self.labelNames = []
 
         for entry in data_set:
-            if entry.diagnosis not in self.labelNames:
-                self.labelNames.append(entry.diagnosis)
+            if labelDivision == "healthy/unhealthy":
+                if entry.diagnosis == "Healthy control":
+                    if "Healthy Control" not in self.labelNames:
+                        self.labelNames.append("Healthy Control")
+                else:
+                    if "Cushing's Syndrome" not in self.labelNames:
+                        self.labelNames.append("Cushing's Syndrome")
+            else:
+                if entry.diagnosis not in self.labelNames:
+                    self.labelNames.append(entry.diagnosis)
 
         if DEBUG["dataSet"]:
             print(str(self.labelNames))
@@ -136,7 +149,7 @@ class fileParser:
             if counter != 0:
                 outRow = []
                 nullEntry = False
-                for i in range(5,21):
+                for i in range(5,22):
                     outRow.append(row[i])
                     if row[i] == "":
                         nullEntry = True
@@ -144,7 +157,7 @@ class fileParser:
                     newEntry = dataEntry(row[0], row[1], outRow, label_division = labelDivision)
                     out.append(newEntry)
             else:
-                for i in range(5,21):
+                for i in range(5,22):
                     self.dataNames.append(row[i])
             counter += 1
         return(out)
@@ -179,9 +192,62 @@ class fileParser:
         return(data)
 
 class processLogger:
-    def __init__(self):
+    def __init__(self, data, labels, collect_auc_data):
         self.states = np.array([])
+        self.auc = np.array([])
+        self.data = data
+        self.labels = labels
+        self.collect_auc_data = collect_auc_data
 
     def __call__(self, state):
         self.states = np.append(self.states, state)
+        if self.collect_auc_data:
+            auc = roc_auc = roc_auc_score(y_true=self.labels, y_score=state["model"].decision_function(self.data))
+            self.auc = np.append(self.auc, auc)
         return False
+
+def calc_array_average(array_set):
+    if DEBUG["avg_array_set_type"]:
+        print(type(array_set))
+    if type(array_set) is list or type(array_set) is np.ndarray:
+        type_check = type(array_set[0])
+        if DEBUG["avg_type_check"]:
+            print(type_check)
+        for entry in array_set:
+            if type(entry) is not type_check:
+                print("Input arrays must all be the same type")
+                return
+        avg = None
+        if type_check is tuple or type_check is np.ndarray:
+            for entry in array_set:
+                if avg is None:
+                    avg = np.array(entry)
+                else:
+                    avg = avg + entry
+            avg = avg / len(array_set)
+
+    else:
+        print("Input must be a list of arrays")
+        return
+    return(avg)
+
+def calc_array_std_dev(array_set):
+    if DEBUG["std_dev_array_set_type"]:
+        print(type(array_set))
+    if type(array_set) is list or type(array_set) is np.ndarray:
+        avg = calc_array_average(array_set)
+        sum = None
+        std_dev = None
+        for entry in array_set:
+            if sum is None:
+                sum = np.square((np.array(entry) - avg))
+            else:
+                sum = sum + np.square((entry - avg))
+
+        sum = sum / len(array_set)
+
+        std_dev = np.sqrt(sum)
+    else:
+        print("Input must be a list of arrays")
+        return
+    return(std_dev)
